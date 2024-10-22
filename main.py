@@ -16,11 +16,24 @@ def parse_terraform_file(filepath):
     with open(filepath, 'r') as file:
         try:
             data = hcl2.load(file)
+            # print(f"Parsing arquivo: {filepath} -> {data}")  # Debug: mostra a estrutura do arquivo
+            
             # Verifica se o recurso aws_dynamodb_table está presente
             if 'resource' in data:
-                for resource_type, resources in data['resource'].items():
-                    if resource_type == 'aws_dynamodb_table':
-                        return True
+                resources = data['resource']
+                if isinstance(resources, dict):  # Estrutura de dicionário
+                    for resource_type, resources_list in resources.items():
+                        if resource_type == 'aws_dynamodb_table':
+                            return True
+                        if isinstance(resources_list, list):  # Se for uma lista de recursos
+                            for resource in resources_list:
+                                if resource_type == 'aws_dynamodb_table':
+                                    return True
+                elif isinstance(resources, list):  # Se for uma lista de recursos
+                    for resource in resources:
+                        for resource_type, resource_details in resource.items():
+                            if resource_type == 'aws_dynamodb_table':
+                                return True
             # Verifica se há módulos referenciados
             if 'module' in data:
                 return check_module_for_dynamodb(data['module'])
@@ -30,15 +43,16 @@ def parse_terraform_file(filepath):
 
 # Função para verificar se algum módulo referenciado cria um aws_dynamodb_table
 def check_module_for_dynamodb(modules):
-    for module in modules:
-        # Se o módulo for remoto (ex: no GitHub), vamos clonar e analisar
-        if 'source' in modules[module] and modules[module]['source'].startswith('git::'):
-            print(f"Módulo remoto encontrado: {modules[module]['source']}")
-            return check_remote_module_for_dynamodb(modules[module]['source'])
-        # Se o módulo for local, procuramos no diretório
-        else:
-            print(f"Módulo local encontrado: {module}")
-            return search_in_terraform_files(module)
+    for module_data in modules:  # Itera sobre os módulos
+        for module_name, module_info in module_data.items():
+            # Se o módulo for remoto (ex: no GitHub), vamos clonar e analisar
+            if 'source' in module_info and module_info['source'].startswith('git::'):
+                print(f"Módulo remoto encontrado: {module_info['source']}")
+                return check_remote_module_for_dynamodb(module_info['source'])
+            # Se o módulo for local, procuramos no diretório
+            else:
+                print(f"Módulo local encontrado: {module_name}")
+                return search_in_terraform_files(module_name)
     return False
 
 # Função para verificar se algum módulo remoto contém aws_dynamodb_table
@@ -90,8 +104,6 @@ def check_all_files_for_dynamodb():
                     files = search_in_terraform_files(module_name)
                     if not files:
                         print(f"  Não foi possível encontrar o módulo {module_name} nos arquivos .tf.")
-            else:
-                print("\nNenhum recurso aws_dynamodb_table encontrado no plano.")
     else:
         print("\nNenhum recurso aws_dynamodb_table foi detectado no terraform plan.")
         print("\nVerificando os arquivos .tf manualmente...")
